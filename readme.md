@@ -116,6 +116,8 @@ The arn format is as follows
 
 
 ### 6. Test your Transfer server by using the hardcoded credentials on the function
+
+You should get something similar to the image below
 ![image](https://user-images.githubusercontent.com/73715060/186577822-25b60725-1374-4696-b5c0-2e87a2a4431b.png)
 
 
