@@ -1,8 +1,21 @@
 # Password Based SFTP using AWS
-### 1. Create bucket an S3 bucket
+## 1. Create an S3 bucket and Parameter Store Variables
 In the example below, I used `alpha-sftp-test-bucket`
 
-### 2. Create IAM Role that will allow AWS Transfer to connect with an S3 Bucket
+Add to Parameter store the following values. You will reference them later. Use secure string where necessary.
+```
+'/sftp-username'  //sample-user
+
+'/sftp-password'    //s@mpl3passw0rd
+
+'/sftp-allowed-ips',   //192.168.1.1, 192.168.1.2    seperate it with a comma
+
+'/sftp-role-arn',   //iam role with access to s3 and has trust established i.e. arn:aws:iam::123456789012:role/transfer-family-sftp-role  
+
+'/sftp-bucket',     //bucket name like  /alpha-sftp-test-bucket
+```
+
+## 2. Create IAM Role that will allow AWS Transfer to connect with an S3 Bucket
 Establish Trust Relationship
 ```
 {
@@ -53,33 +66,86 @@ Attach the following custom policy
 }
 ```
 
-### 3. Create a lambda function
+## 3. Create a lambda function
 Create a node.js lambda function with the following code. This resource will be referenced later
 
 ```
-exports.handler = (event, context, callback) => {
-    const expectedUserName = process.env.SFTP_USERNAME, //sample-user
-        expectedPassword = process.env.SFTP_PASSWORD, //s@mpl3passw0rd
-        expectedIPs = process.env.SFTP_ALLOWED_IPS.split(",").map(x=> x.trim()),  //     192.168.1.1, 192.168.1.2    seperate it with a comma
-        Role = process.env.SFTP_ROLE_ARN,    //iam role with access to s3 and has trust established i.e.   arn:aws:iam::123456789012:role/transfer-family-sftp-role  
-        HomeDirectory =  process.env.SFTP_BUCKET;    //bucket name like  /alpha-sftp-test-bucket
+exports.handler = async (event, context, callback) => {
 
-    const authenticatedResponse = {
-       Role,
-       HomeDirectory
-    };
+
+    let parameters = await getParameters([
+         '/sftp-username',  //sample-user
+         '/sftp-password',    //s@mpl3passw0rd
+         '/sftp-allowed-ips',   //     192.168.1.1, 192.168.1.2    seperate it with a comma
+         '/sftp-role-arn',   //iam role with access to s3 and has trust established i.e.   arn:aws:iam::123456789012:role/transfer-family-sftp-role  
+         '/sftp-bucket',     //bucket name like  /alpha-sftp-test-bucket
+     ]);
  
-    let isUsernameMatched = expectedUserName === event.username;
-    let isPasswordMatched = expectedPassword === event.password;
-    let isWhitelistedIp = expectedIPs.some(ip => ip == event.sourceIp);
-    let hasValidCredentials = isUsernameMatched && isPasswordMatched && isWhitelistedIp;
+  
+     const expectedUserName = parameters.find(x=> x.Name == "/sftp-username").Value,  
+         expectedPassword = parameters.find(x=> x.Name == "/sftp-password").Value,  
+         expectedIPs = parameters.find(x=> x.Name == "/sftp-allowed-ips").Value.split(",").map(x => x.trim()),  
+         Role = parameters.find(x=> x.Name == "/sftp-role-arn").Value,     
+         HomeDirectory = parameters.find(x=> x.Name == "/sftp-bucket").Value; 
+  
+ 
+     const authenticatedResponse = {
+         Role,
+         HomeDirectory
+     };
+ 
+     let isUsernameMatched = expectedUserName === event.username;
+     let isPasswordMatched = expectedPassword === event.password;
+     let isWhitelistedIp = expectedIPs.some(ip => ip == event.sourceIp);
+     let hasValidCredentials = isUsernameMatched && isPasswordMatched && isWhitelistedIp;
+ 
+     let response = hasValidCredentials ? authenticatedResponse : {};
+     callback(null, response);
+ };
+ 
+ 
+ 
+ function getParameters(parameterNames) {
+     const ssm = new (require('aws-sdk/clients/ssm'))();
+ 
+     return new Promise(((resolve, reject) => {
+         var params = {
+             Names: parameterNames, 
+             WithDecryption: true
+         };
+ 
+ 
+         ssm.getParameters(params, function (err, data) {
+             if (err) {
+                 console.log(err, err.stack);
+                 reject();
+             }
+             else { 
+                 resolve(data.Parameters)
+             }
+         });
+     }))
+ }
+```
+Allowing reading of Systems Manager Parameter Store by attaching an inline policy to the lambda execution IAM Role
+![image](https://user-images.githubusercontent.com/73715060/187477441-569a1fdc-06a9-497f-b6cf-dd418b83e902.png)
 
-    let response = hasValidCredentials ? authenticatedResponse : {};
-    callback(null, response);
-};
+You may refer to this inline policy
+```
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Sid": "VisualEditor0",
+            "Effect": "Allow",
+            "Action": "ssm:GetParameters", 
+            "Resource": "arn:aws:ssm:ap-southeast-1:123456789012:parameter/*"
+        }
+    ]
+}
 ```
 
-You can use the following test event to check if your lambda works as intended
+Test the lambda you created by using the following test event
 ```
 {
     "username": "sample-user",
@@ -90,7 +156,7 @@ You can use the following test event to check if your lambda works as intended
 }
 ```
 
-### 4. Create the AWS Transfer Familly Server
+## 4. Create the AWS Transfer Familly Server
 In the create wizard, refer to the listing below on what to select:
 Select the protocols you want to enable
 - SFTP 
@@ -106,7 +172,7 @@ Domain
 
 Then leave the rest as default.
 
-### 5. Update lambda created earlier to allow invocation from AWS Transfer Family via resource policy
+## 5. Update lambda created earlier to allow invocation from AWS Transfer Family via resource policy
 Go to `Configuration` -> `Permissions` -> `Resource-based policy`
 Then select the following:
 - Policy statement
@@ -127,7 +193,7 @@ The arn format is as follows
 `lambda:InvokeFunction`
 
 
-### 6. Test your Transfer server by using the hardcoded credentials on the function
+## 6. Test your Transfer server by using the hardcoded credentials on the function
 
 You should get something similar to the image below
 ![image](https://user-images.githubusercontent.com/73715060/186577822-25b60725-1374-4696-b5c0-2e87a2a4431b.png)
