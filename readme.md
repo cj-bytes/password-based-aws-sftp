@@ -53,21 +53,22 @@ Attach the following custom policy
 }
 ```
 
-### 3. Create a lambda function.
+### 3. Create a lambda function
 Create a node.js lambda function with the following code. This resource will be referenced later
 
 ```
 exports.handler = (event, context, callback) => {
-    const expectedUserName = "sample-user",
-        expectedPassword = "s@mpl3passw0rd",
-        expectedIPs = ["192.168.1.1", "192.168.1.2"];
+    const expectedUserName = process.env.SFTP_USERNAME, //sample-user
+        expectedPassword = process.env.SFTP_PASSWORD, //s@mpl3passw0rd
+        expectedIPs = process.env.SFTP_ALLOWED_IPS.split(",").map(x=> x.trim()),  //     192.168.1.1, 192.168.1.2    seperate it with a comma
+        Role = process.env.SFTP_ROLE_ARN,    //iam role with access to s3 and has trust established i.e.   arn:aws:iam::123456789012:role/transfer-family-sftp-role  
+        HomeDirectory =  process.env.SFTP_BUCKET;    //bucket name like  /alpha-sftp-test-bucket
 
     const authenticatedResponse = {
-        Role: "arn:aws:iam::123456789012:role/transfer-family-sftp-role",  //iam role with access to s3 and has trust established
-        HomeDirectory: "/alpha-sftp-test-bucket" //bucket name
+       Role,
+       HomeDirectory
     };
-
-
+ 
     let isUsernameMatched = expectedUserName === event.username;
     let isPasswordMatched = expectedPassword === event.password;
     let isWhitelistedIp = expectedIPs.some(ip => ip == event.sourceIp);
@@ -76,6 +77,17 @@ exports.handler = (event, context, callback) => {
     let response = hasValidCredentials ? authenticatedResponse : {};
     callback(null, response);
 };
+```
+
+You can use the following test event to check if your lambda works as intended
+```
+{
+    "username": "sample-user",
+    "password": "s@mpl3passw0rd",
+    "protocol": "SFTP",
+    "serverId": "s-abcd123456",
+    "sourceIp": "192.168.1.1"
+}
 ```
 
 ### 4. Create the AWS Transfer Familly Server
