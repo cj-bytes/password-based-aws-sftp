@@ -156,6 +156,10 @@ Test the lambda you created by using the following test event
 }
 ```
 
+You should get the following response\
+![image](https://user-images.githubusercontent.com/73715060/187478029-597c4028-1af6-4967-b764-db13cca61f6d.png)
+
+
 ## 4. Create the AWS Transfer Familly Server
 In the create wizard, refer to the listing below on what to select:
 Select the protocols you want to enable
