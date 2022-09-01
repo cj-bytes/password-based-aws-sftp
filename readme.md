@@ -74,58 +74,79 @@ exports.handler = async (event, context, callback) => {
 
 
     let parameters = await getParameters([
-         '/sftp-username',  //sample-user
-         '/sftp-password',    //s@mpl3passw0rd
-         '/sftp-allowed-ips',   //     192.168.1.1, 192.168.1.2    seperate it with a comma
-         '/sftp-role-arn',   //iam role with access to s3 and has trust established i.e.   arn:aws:iam::123456789012:role/transfer-family-sftp-role  
-         '/sftp-bucket',     //bucket name like  /alpha-sftp-test-bucket
-     ]);
- 
-  
-     const expectedUserName = parameters.find(x=> x.Name == "/sftp-username").Value,  
-         expectedPassword = parameters.find(x=> x.Name == "/sftp-password").Value,  
-         expectedIPs = parameters.find(x=> x.Name == "/sftp-allowed-ips").Value.split(",").map(x => x.trim()),  
-         Role = parameters.find(x=> x.Name == "/sftp-role-arn").Value,     
-         HomeDirectory = parameters.find(x=> x.Name == "/sftp-bucket").Value; 
-  
- 
-     const authenticatedResponse = {
-         Role,
-         HomeDirectory
-     };
- 
-     let isUsernameMatched = expectedUserName === event.username;
-     let isPasswordMatched = expectedPassword === event.password;
-     let isWhitelistedIp = expectedIPs.some(ip => ip == event.sourceIp);
-     let hasValidCredentials = isUsernameMatched && isPasswordMatched && isWhitelistedIp;
- 
-     let response = hasValidCredentials ? authenticatedResponse : {};
-     callback(null, response);
- };
- 
- 
- 
- function getParameters(parameterNames) {
-     const ssm = new (require('aws-sdk/clients/ssm'))();
- 
-     return new Promise(((resolve, reject) => {
-         var params = {
-             Names: parameterNames, 
-             WithDecryption: true
-         };
- 
- 
-         ssm.getParameters(params, function (err, data) {
-             if (err) {
-                 console.log(err, err.stack);
-                 reject();
-             }
-             else { 
-                 resolve(data.Parameters)
-             }
-         });
-     }))
- }
+        '/sftp-username',  //sample-user
+        '/sftp-password',    //s@mpl3passw0rd
+        '/sftp-allowed-ips',   //     192.168.1.1, 192.168.1.2    seperate it with a comma
+        '/sftp-role-arn',   //iam role with access to s3 and has trust established i.e.   arn:aws:iam::123456789012:role/transfer-family-sftp-role  
+        '/sftp-bucket',     //bucket name like  /alpha-sftp-test-bucket
+    ]);
+
+
+    const expectedUserName = parameters.find(x => x.Name == "/sftp-username").Value,
+        expectedPassword = parameters.find(x => x.Name == "/sftp-password").Value,
+        expectedIPs = parameters.find(x => x.Name == "/sftp-allowed-ips").Value.split(",").map(x => x.trim()),
+        Role = parameters.find(x => x.Name == "/sftp-role-arn").Value,
+        HomeDirectory = parameters.find(x => x.Name == "/sftp-bucket").Value;
+
+
+    const authenticatedResponse = {
+        Role,
+        HomeDirectory
+    };
+
+    let isUsernameMatched = expectedUserName === event.username;
+    let isPasswordMatched = expectedPassword === event.password;
+    let isWhitelistedIp = expectedIPs.filter(ip => !ip.includes("/")).some(ip => ip == event.sourceIp)
+        || isIpv4withinCidr(event.sourceIp, expectedIPs.filter(ip => ip.includes("/")));
+
+    let hasValidCredentials = isUsernameMatched && isPasswordMatched && isWhitelistedIp;
+
+    let response = hasValidCredentials ? authenticatedResponse : {};
+    callback(null, response);
+};
+
+
+
+
+function getParameters(parameterNames) {
+    const ssm = new (require('aws-sdk/clients/ssm'))();
+
+    return new Promise(((resolve, reject) => {
+        var params = {
+            Names: parameterNames,
+            WithDecryption: true
+        };
+
+
+        ssm.getParameters(params, function (err, data) {
+            if (err) {
+                console.log(err, err.stack);
+                reject();
+            }
+            else {
+                resolve(data.Parameters)
+            }
+        });
+    }))
+}
+
+
+
+//thanks to the article for the function below https://tech.mybuilder.com/determining-if-an-ipv4-address-is-within-a-cidr-range-in-javascript/?fbclid=IwAR0hLWtYnuSlnfrSGzGeo-KKPaU1Ndae3OQNowm2SEYg6Ctr_-E_h0OU3II
+function isIpv4withinCidr(ip, cidrs) {
+    const ip4ToInt = ip =>
+        ip.split('.').reduce((int, oct) => (int << 8) + parseInt(oct, 10), 0) >>> 0;
+
+    const isIp4InCidr = ip => cidr => {
+        const [range, bits = 32] = cidr.split('/');
+        const mask = ~(2 ** (32 - bits) - 1);
+        return (ip4ToInt(ip) & mask) === (ip4ToInt(range) & mask);
+    };
+
+    return cidrs.some(isIp4InCidr(ip)); 
+}
+
+
 ```
 Allowing reading of Systems Manager Parameter Store by attaching an inline policy to the lambda execution IAM Role
 ![image](https://user-images.githubusercontent.com/73715060/187477441-569a1fdc-06a9-497f-b6cf-dd418b83e902.png)
