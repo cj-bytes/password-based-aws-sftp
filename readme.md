@@ -1,4 +1,4 @@
-# Password Based SFTP using AWS
+# Password Based SFTP using AWS Transfer
 ## 1. Create an S3 bucket and Parameter Store Variables
 In the example below, I used `alpha-sftp-test-bucket`
 
